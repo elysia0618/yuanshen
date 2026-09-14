@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>版本主线剧情 · 原神</title>
+  <meta name="description" content="原神各版本主线剧情时间线，回顾旅行者在提瓦特大陆的传奇旅程。">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="bg-particles" id="particles"></div>
+
+  <nav class="navbar">
+    <a href="index.html" class="logo">
+      <span class="logo-icon">原</span>
+      <span>提瓦特图鉴</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="index.html#home">首页</a></li>
+      <li><a href="index.html#characters">角色</a></li>
+      <li><a href="versions.html">版本剧情</a></li>
+      <li><a href="index.html#about">关于</a></li>
+    </ul>
+  </nav>
+
+  <div class="versions-container">
+    <div class="versions-hero fade-in">
+      <h1>版 本 剧 情</h1>
+      <p>G E N S H I N &nbsp; I M P A C T &nbsp; S T O R Y</p>
+      <p style="margin-top:16px; max-width:600px; margin-left:auto; margin-right:auto; line-height:1.9;">
+        跟随旅行者的脚步，回顾提瓦特大陆每一段震撼人心的主线故事
+      </p>
+    </div>
+
+    <!-- 地区筛选 -->
+    <div class="region-filter" id="regionFilter">
+      <button class="filter-btn active" data-region="all">全部</button>
+      <button class="filter-btn" data-region="蒙德">蒙德</button>
+      <button class="filter-btn" data-region="璃月">璃月</button>
+      <button class="filter-btn" data-region="稻妻">稻妻</button>
+      <button class="filter-btn" data-region="须弥">须弥</button>
+      <button class="filter-btn" data-region="枫丹">枫丹</button>
+      <button class="filter-btn" data-region="纳塔">纳塔</button>
+      <button class="filter-btn" data-region="至冬">至冬</button>
+    </div>
+
+    <!-- 时间线 -->
+    <div class="timeline" id="timeline"></div>
+  </div>
+
+  <footer class="footer">
+    <p>© 提瓦特角色图鉴 · 原神爱好者制作 · 仅供学习交流</p>
+  </footer>
+
+  <script src="js/versions-data.js"></script>
+  <script src="js/main.js"></script>
+  <script>
+    // 渲染版本时间线
+    function renderTimeline(region = 'all') {
+      const timeline = document.getElementById('timeline');
+      if (!timeline) return;
+
+      const filtered = region === 'all'
+        ? VERSIONS
+        : VERSIONS.filter(v => v.region === region);
+
+      timeline.innerHTML = '';
+
+      filtered.forEach((v, index) => {
+        const item = document.createElement('div');
+        item.className = 'timeline-item';
+        item.style.animationDelay = `${index * 0.08}s`;
+        item.style.setProperty('--region-color', v.color);
+
+        const charsHtml = v.keyChars.map(c => `<span class="char-chip">${c}</span>`).join('');
+        const kwHtml = v.keywords.map(k => `<span class="kw">${k}</span>`).join('');
+
+        item.innerHTML = `
+          <div class="timeline-dot"></div>
+          <div class="timeline-card">
+            <div class="timeline-header">
+              <span class="version-badge">v${v.version}</span>
+              <span class="version-title">${v.title}</span>
+              <span class="version-subtitle">${v.date}</span>
+            </div>
+            <div class="version-meta">
+              <span class="tag" style="color:${v.color}; border-color:${v.color};">${v.region}</span>
+              <span class="tag">${v.archon}</span>
+            </div>
+            <div class="version-summary">${v.summary}</div>
+            <div class="version-story">${v.story}</div>
+            <div class="version-chars">${charsHtml}</div>
+            <div class="version-keywords">${kwHtml}</div>
+          </div>
+        `;
+
+        timeline.appendChild(item);
+      });
+    }
+
+    // 地区筛选
+    document.querySelectorAll('#regionFilter .filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#regionFilter .filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderTimeline(btn.dataset.region);
+      });
+    });
+
+    // 初始渲染
+    document.addEventListener('DOMContentLoaded', () => {
+      renderTimeline('all');
+    });
+  </script>
+</body>
+</html>

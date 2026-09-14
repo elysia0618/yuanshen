@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>提瓦特角色图鉴 · 原神</title>
+  <meta name="description" content="原神主要角色立绘与故事背景图鉴，探索提瓦特大陆上每一位角色的传奇故事。">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- 背景粒子 -->
+  <div class="bg-particles" id="particles"></div>
+
+  <!-- 导航栏 -->
+  <nav class="navbar">
+    <a href="index.html" class="logo">
+      <span class="logo-icon">原</span>
+      <span>提瓦特图鉴</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="#home">首页</a></li>
+      <li><a href="#characters">角色</a></li>
+      <li><a href="versions.html">版本剧情</a></li>
+      <li><a href="#about">关于</a></li>
+    </ul>
+  </nav>
+
+  <!-- Hero 区域 -->
+  <header class="hero" id="home">
+    <h1 class="hero-title">原 神</h1>
+    <p class="hero-subtitle">G E N S H I N &nbsp; I M P A C T</p>
+    <p style="max-width:600px; color:var(--text-secondary); line-height:2; font-size:15px; letter-spacing:1px;">
+      在七种元素交汇的幻想大陆「提瓦特」，<br>
+      每一位角色都拥有属于自己的传奇故事。<br>
+      点击下方角色立绘，开启他们的命运篇章。
+    </p>
+    <div class="hero-scroll">▼ 向下探索 ▼</div>
+  </header>
+
+  <!-- 角色区域 -->
+  <section id="characters">
+    <div class="section-header">
+      <h2>角 色 图 鉴</h2>
+      <div class="line"></div>
+      <p>共收录 30 位提瓦特大陆的传奇角色</p>
+    </div>
+
+    <!-- 元素筛选 -->
+    <div class="element-filter" id="elementFilter">
+      <button class="filter-btn active" data-element="all">全部</button>
+      <button class="filter-btn" data-element="anemo">风</button>
+      <button class="filter-btn" data-element="geo">岩</button>
+      <button class="filter-btn" data-element="electro">雷</button>
+      <button class="filter-btn" data-element="dendro">草</button>
+      <button class="filter-btn" data-element="hydro">水</button>
+      <button class="filter-btn" data-element="pyro">火</button>
+      <button class="filter-btn" data-element="cryo">冰</button>
+    </div>
+
+    <!-- 角色卡片网格 -->
+    <div class="characters-grid" id="charactersGrid"></div>
+  </section>
+
+  <!-- 关于 -->
+  <section id="about" style="max-width:800px; margin:0 auto; padding:40px 24px 80px; position:relative; z-index:1; text-align:center;">
+    <div class="section-header">
+      <h2>关 于 本 站</h2>
+      <div class="line"></div>
+    </div>
+    <p style="color:var(--text-secondary); line-height:2; font-size:15px; letter-spacing:1px;">
+      本站为原神爱好者制作的角色图鉴，收录了提瓦特大陆上主要角色的立绘、<br>
+      称号、故事背景与主要剧情。愿每一位旅行者都能在这里找到属于自己的感动。<br><br>
+      <span style="color:var(--accent-gold);">"愿此行，终抵群星。"</span>
+    </p>
+  </section>
+
+  <!-- 页脚 -->
+  <footer class="footer">
+    <p>© 提瓦特角色图鉴 · 原神爱好者制作 · 仅供学习交流</p>
+    <p style="margin-top:8px; opacity:0.6;">角色及世界观版权归 miHoYo / COGNOSPHERE 所有</p>
+  </footer>
+
+  <!-- 脚本 -->
+  <script src="js/characters-data.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
