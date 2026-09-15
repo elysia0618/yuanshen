@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>提瓦特地图 · 原神</title>
+  <meta name="description" content="基于米游社「观测枢」官方数据的提瓦特互动地图：全景大地图与七国分地图，标注七天神像、传送锚点、秘境等地点。">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="bg-particles" id="particles"></div>
+
+  <nav class="navbar">
+    <a href="index.html" class="logo">
+      <span class="logo-icon">原</span>
+      <span>提瓦特图鉴</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="index.html#home">首页</a></li>
+      <li><a href="index.html#characters">角色</a></li>
+      <li><a href="maps.html" class="active">提瓦特地图</a></li>
+      <li><a href="versions.html">版本剧情</a></li>
+      <li><a href="index.html#about">关于</a></li>
+    </ul>
+  </nav>
+
+  <div class="map-page">
+    <!-- Hero -->
+    <div class="map-hero fade-in">
+      <h1>提 瓦 特 地 图</h1>
+      <p class="hero-en">T E Y V A T &nbsp; A T L A S</p>
+      <p class="hero-tip">
+        地图与标注数据取自米游社「观测枢」原神官方互动地图。<br>
+        拖动平移 · 滚轮缩放 · 点击国家名跳转分地图 · 点击图标查看地点。
+      </p>
+    </div>
+
+    <section class="map-section">
+      <!-- 分类筛选 -->
+      <div class="map-toolbar" id="catToolbar"></div>
+
+      <div class="mv-layout">
+        <!-- 侧栏：国家导航 + 地点列表 -->
+        <aside class="mv-sidebar">
+          <div class="mv-card">
+            <div class="mv-card-title">七 国 导 航</div>
+            <div class="mv-country-list" id="countryList"></div>
+          </div>
+          <div class="mv-card" id="countryCard" style="display:none;">
+            <div class="mv-card-title" id="ccTitle">国 家 详 情</div>
+            <div class="mv-country-info" id="countryInfo"></div>
+            <div class="mv-loc-list" id="locList"></div>
+          </div>
+        </aside>
+
+        <!-- 地图视口 -->
+        <div class="mv-viewport" id="viewport">
+          <div class="mv-world" id="world">
+            <div id="tileLayer" style="position:absolute;inset:0;"></div>
+            <div id="labelLayer" style="position:absolute;inset:0;"></div>
+            <div id="markerLayer" style="position:absolute;inset:0;"></div>
+          </div>
+
+          <div class="mv-loading" id="loadingPill">官方切片加载中 …</div>
+          <div class="mv-status" id="statusBar"></div>
+
+          <div class="mv-controls">
+            <button class="mv-btn" id="zoomIn" title="放大">＋</button>
+            <button class="mv-btn" id="zoomOut" title="缩小">－</button>
+            <button class="mv-btn" id="zoomFit" title="全览提瓦特">⌂</button>
+          </div>
+        </div>
+      </div>
+
+      <p style="text-align:center; font-size:12px; color:var(--text-secondary); opacity:.65; margin-top:14px; letter-spacing:1px;">
+        地图切片与点位数据来源：米游社「观测枢」原神官方互动地图 · 版权归 miHoYo / HoYoverse 所有 · 仅供学习交流
+      </p>
+    </section>
+  </div>
+
+  <footer class="footer">
+    <p>© 提瓦特角色图鉴 · 原神爱好者制作 · 仅供学习交流</p>
+  </footer>
+
+  <script src="js/official-map-data.js"></script>
+  <script>
+    const M = window.OFFICIAL_MAP;
+    const W = M.totalSize[0], H = M.totalSize[1];   // 画布像素 22528 × 20480
+    const TS = M.tileSize;                          // 2048
+    const COLS = Math.ceil(W / TS), ROWS = Math.ceil(H / TS);
+    const OX = W / 2, OY = H / 2;                   // 游戏坐标 → 画布像素 原点偏移
+    const worldEl = document.getElementById('world');
+    const viewport = document.getElementById('viewport');
+    const tileLayer = document.getElementById('tileLayer');
+    const labelLayer = document.getElementById('labelLayer');
+    const markerLayer = document.getElementById('markerLayer');
+
+    /* ===== 内容包围盒（七国 bbox 并集，用于初始全览） ===== */
+    let cx0 = 1e9, cy0 = 1e9, cx1 = -1e9, cy1 = -1e9;
+    M.countries.forEach(c => {
+      cx0 = Math.min(cx0, c.bbox[0] + OX); cy0 = Math.min(cy0, c.bbox[1] + OY);
+      cx1 = Math.max(cx1, c.bbox[2] + OX); cy1 = Math.max(cy1, c.bbox[3] + OY);
+    });
+    const CONTENT = [cx0 - 120, cy0 - 120, cx1 + 120, cy1 + 120];
+
+    /* ===== 状态 ===== */
+    let scale = 0.05, tx = 0, ty = 0;
+    let zMid = false, zLabels = false;
+    const MIN_FACTOR = 0.9;
+    let minScale = 0.02, maxScale = 2.5;
+
+    const catOn = {};        // 分类开关
+    const markerEls = [];    // {el, key, gate, wx, wy, labelName, catName, country}
+    const loadedTiles = new Set();
+    let pendingFirst = -1;
+    let popup = null, popupAt = null;
+
+    /* ===== 切片懒加载 ===== */
+    function updateTiles() {
+      const vw = viewport.clientWidth, vh = viewport.clientHeight;
+      const wx0 = -tx / scale, wy0 = -ty / scale;
+      const wx1 = (vw - tx) / scale, wy1 = (vh - ty) / scale;
+      const c0 = Math.max(0, Math.floor(wx0 / TS)), c1 = Math.min(COLS - 1, Math.floor(wx1 / TS));
+      const r0 = Math.max(0, Math.floor(wy0 / TS)), r1 = Math.min(ROWS - 1, Math.floor(wy1 / TS));
+      let created = 0;
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+        const key = r * COLS + c;
+        if (loadedTiles.has(key)) continue;
+        loadedTiles.add(key);
+        created++;
+        const img = new Image();
+        img.className = 'mv-tile';
+        img.decoding = 'async';
+        img.style.left = c * TS + 'px';
+        img.style.top = r * TS + 'px';
+        img.onload = tileLoaded;
+        img.onerror = tileLoaded;
+        img.src = M.slices[r][c];
+        tileLayer.appendChild(img);
+      }
+      if (pendingFirst < 0 && created > 0) pendingFirst = created;
+    }
+    function tileLoaded() {
+      if (pendingFirst > 0 && --pendingFirst === 0) {
+        const p = document.getElementById('loadingPill');
+        if (p) { p.style.opacity = '0'; setTimeout(() => p.remove(), 600); }
+      }
+    }
+
+    /* ===== 国家名标签 ===== */
+    M.countries.forEach(c => {
+      const wx = (c.bbox[0] + c.bbox[2]) / 2 + OX;
+      const wy = (c.bbox[1] + c.bbox[3]) / 2 + OY;
+      const el = document.createElement('div');
+      el.className = 'mv-region-label';
+      el.style.left = wx + 'px';
+      el.style.top = wy + 'px';
+      const motto = (c.desc.match(/「(.+?)」/) || [])[1];
+      el.innerHTML = `<div class="mv-rl-name">${c.name}</div>` +
+        (motto ? `<div class="mv-rl-sub">${motto}之城</div>` : '');
+      el.addEventListener('click', e => { e.stopPropagation(); selectCountry(c.id, true); });
+      labelLayer.appendChild(el);
+    });
+
+    /* ===== 标记 ===== */
+    M.categories.forEach(cat => {
+      catOn[cat.key] = true;
+      (M.markers[cat.key] || []).forEach(m => {
+        const wx = m[0] + OX, wy = m[1] + OY;
+        const el = document.createElement('div');
+        el.className = 'mv-marker';
+        el.style.left = wx + 'px';
+        el.style.top = wy + 'px';
+        el.innerHTML = `<img src="${cat.icon}" alt="" draggable="false"><span class="mv-mk-label">${cat.name}</span>`;
+        const country = M.countries.find(c => c.id === m[2]);
+        el.addEventListener('click', e => {
+          e.stopPropagation();
+          showPopup(wx, wy, (M.labels && M.labels[m[3]]) || cat.name, cat.name, country ? country.name : '');
+        });
+        markerLayer.appendChild(el);
+        // 传送锚点 / 洞口 数量多，放大后才显示
+        markerEls.push({ el, key: cat.key, gate: (cat.key === 'waypoint' || cat.key === 'cave') ? 'mid' : 'always', wx, wy });
+      });
+    });
+
+    function refreshMarkers() {
+      for (const mk of markerEls) {
+        const show = catOn[mk.key] && (mk.gate !== 'mid' || zMid);
+        mk.el.style.display = show ? '' : 'none';
+      }
+    }
+
+    /* ===== 变换 ===== */
+    function apply() {
+      worldEl.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`;
+      worldEl.style.setProperty('--invs', 1 / scale);
+      const mid = scale >= 0.22;
+      if (mid !== zMid) { zMid = mid; refreshMarkers(); }
+      const lab = scale >= 0.35;
+      if (lab !== zLabels) { zLabels = lab; viewport.classList.toggle('mv-zoomed-in', lab); }
+      updateTiles();
+      updatePopupPos();
+      updateStatus();
+    }
+
+    function clampT() {
+      const vw = viewport.clientWidth, vh = viewport.clientHeight;
+      tx = (W * scale <= vw) ? (vw - W * scale) / 2 : Math.min(0, Math.max(vw - W * scale, tx));
+      ty = (H * scale <= vh) ? (vh - H * scale) / 2 : Math.min(0, Math.max(vh - H * scale, ty));
+    }
+
+    function setScale(ns, px, py) {
+      ns = Math.min(maxScale, Math.max(minScale, ns));
+      const k = ns / scale;
+      tx = px - (px - tx) * k;
+      ty = py - (py - ty) * k;
+      scale = ns;
+      clampT(); apply();
+    }
+
+    function fitContent() {
+      const vw = viewport.clientWidth, vh = viewport.clientHeight;
+      const rw = CONTENT[2] - CONTENT[0], rh = CONTENT[3] - CONTENT[1];
+      scale = Math.min(vw / rw, vh / rh) * MIN_FACTOR;
+      minScale = Math.min(scale * 0.9, 0.02);
+      tx = vw / 2 - (CONTENT[0] + rw / 2) * scale;
+      ty = vh / 2 - (CONTENT[1] + rh / 2) * scale;
+      clampT(); apply();
+    }
+
+    /* ===== 飞行动画 ===== */
+    let animId = 0;
+    function flyTo(wx, wy, targetScale, ms = 600) {
+      cancelAnimationFrame(animId);
+      const vw = viewport.clientWidth, vh = viewport.clientHeight;
+      const s0 = scale, t0x = tx, t0y = ty;
+      const s1 = Math.min(maxScale, Math.max(minScale, targetScale));
+      let t1x = vw / 2 - wx * s1, t1y = vh / 2 - wy * s1;
+      const tmp = { tx: t1x, ty: t1y, scale: s1 };
+      // 复用 clamp 逻辑
+      (function () {
+        const c = tmp;
+        c.tx = (W * s1 <= vw) ? (vw - W * s1) / 2 : Math.min(0, Math.max(vw - W * s1, c.tx));
+        c.ty = (H * s1 <= vh) ? (vh - H * s1) / 2 : Math.min(0, Math.max(vh - H * s1, c.ty));
+      })();
+      const start = performance.now();
+      const step = now => {
+        const p = Math.min(1, (now - start) / ms);
+        const e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+        scale = s0 + (tmp.scale - s0) * e;
+        tx = t0x + (tmp.tx - t0x) * e;
+        ty = t0y + (tmp.ty - t0y) * e;
+        apply();
+        if (p < 1) animId = requestAnimationFrame(step);
+      };
+      animId = requestAnimationFrame(step);
+    }
+
+    function flyToBbox(bbox) {
+      const x0 = bbox[0] + OX, y0 = bbox[1] + OY, x1 = bbox[2] + OX, y1 = bbox[3] + OY;
+      const vw = viewport.clientWidth, vh = viewport.clientHeight;
+      const s = Math.min(vw / (x1 - x0), vh / (y1 - y0)) * 0.88;
+      flyTo((x0 + x1) / 2, (y0 + y1) / 2, Math.min(maxScale, s));
+    }
+
+    /* ===== 交互：拖动 / 双指缩放 / 滚轮 ===== */
+    const pts = new Map();
+    let pinchStart = null, lastPan = null;
+    viewport.addEventListener('pointerdown', e => {
+      if (e.target.closest('.mv-controls')) return;
+      viewport.setPointerCapture(e.pointerId);
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      cancelAnimationFrame(animId);
+      hidePopup();
+      viewport.classList.add('dragging');
+      if (pts.size === 1) {
+        lastPan = { x: e.clientX, y: e.clientY };
+      } else if (pts.size === 2) {
+        const [a, b] = [...pts.values()];
+        pinchStart = { dist: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, scale, tx, ty };
+        lastPan = null;
+      }
+    });
+    viewport.addEventListener('pointermove', e => {
+      if (!pts.has(e.pointerId)) return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 2 && pinchStart) {
+        const [a, b] = [...pts.values()];
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        const rect = viewport.getBoundingClientRect();
+        const ns = Math.min(maxScale, Math.max(minScale, pinchStart.scale * (d / pinchStart.dist || 1)));
+        const kk = ns / pinchStart.scale;
+        scale = ns;
+        tx = (a.x + b.x) / 2 - rect.left - (pinchStart.cx - rect.left - pinchStart.tx) * kk;
+        ty = (a.y + b.y) / 2 - rect.top - (pinchStart.cy - rect.top - pinchStart.ty) * kk;
+        clampT(); apply();
+      } else if (pts.size === 1 && lastPan) {
+        tx += e.clientX - lastPan.x;
+        ty += e.clientY - lastPan.y;
+        lastPan = { x: e.clientX, y: e.clientY };
+        clampT(); apply();
+      }
+    });
+    const endPointer = e => {
+      pts.delete(e.pointerId);
+      if (pts.size < 2) pinchStart = null;
+      if (pts.size === 1) { const [p] = [...pts.values()]; lastPan = { x: p.x, y: p.y }; }
+      else lastPan = null;
+      if (pts.size === 0) viewport.classList.remove('dragging');
+    };
+    viewport.addEventListener('pointerup', endPointer);
+    viewport.addEventListener('pointercancel', endPointer);
+    viewport.addEventListener('pointerleave', e => { if (pts.size && e.pointerType === 'mouse') endPointer(e); });
+
+    viewport.addEventListener('wheel', e => {
+      e.preventDefault();
+      cancelAnimationFrame(animId);
+      const rect = viewport.getBoundingClientRect();
+      const f = Math.exp(-e.deltaY * 0.0016);
+      setScale(scale * f, e.clientX - rect.left, e.clientY - rect.top);
+      hidePopup();
+    }, { passive: false });
+
+    document.getElementById('zoomIn').addEventListener('click', () => {
+      const r = viewport.getBoundingClientRect();
+      flyTo((-tx + r.width / 2) / scale, (-ty + r.height / 2) / scale, scale * 1.6, 260);
+    });
+    document.getElementById('zoomOut').addEventListener('click', () => {
+      const r = viewport.getBoundingClientRect();
+      flyTo((-tx + r.width / 2) / scale, (-ty + r.height / 2) / scale, scale / 1.6, 260);
+    });
+    document.getElementById('zoomFit').addEventListener('click', () => { hidePopup(); fitContent(); });
+
+    /* ===== 弹出框 ===== */
+    function showPopup(wx, wy, name, catName, countryName) {
+      hidePopup();
+      popup = document.createElement('div');
+      popup.className = 'mv-popup';
+      popup.innerHTML = `<div class="mv-pop-name">${name}</div><div class="mv-pop-sub">${catName}${countryName ? ' · ' + countryName : ''}</div>`;
+      viewport.appendChild(popup);
+      popupAt = { wx, wy };
+      updatePopupPos();
+    }
+    function updatePopupPos() {
+      if (!popup || !popupAt) return;
+      popup.style.left = popupAt.wx * scale + tx + 'px';
+      popup.style.top = popupAt.wy * scale + ty + 'px';
+    }
+    function hidePopup() {
+      if (popup) { popup.remove(); popup = null; popupAt = null; }
+    }
+
+    /* ===== 状态栏 ===== */
+    let statusRaf = 0;
+    function updateStatus() {
+      if (statusRaf) return;
+      statusRaf = requestAnimationFrame(() => {
+        statusRaf = 0;
+        document.getElementById('statusBar').textContent =
+          `官方地图 · 缩放 ${Math.round(scale * 100)}% · 拖动平移 / 滚轮缩放${zMid ? '' : ' · 放大后显示锚点与洞口'}`;
+      });
+    }
+
+    /* ===== 分类筛选 ===== */
+    const toolbar = document.getElementById('catToolbar');
+    const countAll = markerEls.length;
+    toolbar.innerHTML = M.categories.map(cat => {
+      const n = (M.markers[cat.key] || []).length;
+      return `<span class="mv-cat active" data-key="${cat.key}" style="--c:${cat.color}">
+        <img src="${cat.icon}" alt=""><span>${cat.name}</span><span class="mv-count">${n}</span></span>`;
+    }).join('');
+    toolbar.addEventListener('click', e => {
+      const chip = e.target.closest('.mv-cat');
+      if (!chip) return;
+      const key = chip.dataset.key;
+      catOn[key] = !catOn[key];
+      chip.classList.toggle('active', catOn[key]);
+      refreshMarkers();
+    });
+
+    /* ===== 侧栏国家 ===== */
+    const countryList = document.getElementById('countryList');
+    countryList.innerHTML = M.countries.map(c => {
+      const n = M.categories.reduce((s, cat) => s + (M.markers[cat.key] || []).filter(m => m[2] === c.id).length, 0);
+      return `<div class="mv-country" data-id="${c.id}">
+        <img src="${c.icon}" alt="${c.name}"><span class="mv-cname">${c.name}</span><span class="mv-cfull">${n} 处</span></div>`;
+    }).join('');
+    countryList.addEventListener('click', e => {
+      const item = e.target.closest('.mv-country');
+      if (item) selectCountry(+item.dataset.id, true);
+    });
+
+    let currentCountry = null;
+    function selectCountry(id, fly) {
+      const c = M.countries.find(x => x.id === id);
+      if (!c) return;
+      currentCountry = id;
+      document.querySelectorAll('.mv-country').forEach(el =>
+        el.classList.toggle('active', +el.dataset.id === id));
+      const card = document.getElementById('countryCard');
+      card.style.display = '';
+      document.getElementById('ccTitle').textContent = c.name + ' · 分地图';
+      document.getElementById('countryInfo').innerHTML =
+        `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+           <img src="${c.icon}" style="width:44px;height:44px;border-radius:10px;object-fit:cover;" alt="">
+           <div><b style="font-size:15px;">${c.name}</b><br><span style="font-size:11px;">${c.desc.match(/^(.+?)。/)[1]}</span></div>
+         </div>
+         <div style="font-size:12px;">${c.desc.split('。').slice(1).join('。')}</div>`;
+      renderLocList(c);
+      if (fly) { hidePopup(); flyToBbox(c.bbox); }
+    }
+
+    function renderLocList(c) {
+      const list = document.getElementById('locList');
+      const groups = [];
+      M.categories.forEach(cat => {
+        const items = (M.markers[cat.key] || []).filter(m => m[2] === c.id);
+        if (!items.length || !catOn[cat.key]) return;
+        groups.push({ cat, items });
+      });
+      if (!groups.length) {
+        list.innerHTML = '<div class="mv-loc-empty">该分类下暂无标注</div>';
+        return;
+      }
+      let html = '';
+      const CAP = 50;
+      groups.forEach(g => {
+        html += `<div class="mv-loc-group">${g.cat.name} · ${g.items.length} 处</div>`;
+        g.items.slice(0, CAP).forEach((m, i) => {
+          const name = (M.labels && M.labels[m[3]]) || g.cat.name;
+          html += `<div class="mv-loc" data-cat="${g.cat.key}" data-i="${i}">
+            <img src="${g.cat.icon}" alt=""><span>${name}</span></div>`;
+        });
+        if (g.items.length > CAP) html += `<div class="mv-loc-empty">仅显示前 ${CAP} 处，地图内可看全部</div>`;
+      });
+      list.innerHTML = html;
+      list.querySelectorAll('.mv-loc').forEach(el => {
+        el.addEventListener('click', () => {
+          const g = groups.find(x => x.cat.key === el.dataset.cat);
+          const m = g.items[+el.dataset.i];
+          const wx = m[0] + OX, wy = m[1] + OY;
+          flyTo(wx, wy, Math.max(scale, 0.5), 550);
+          // 闪光定位
+          setTimeout(() => {
+            const mk = markerEls.find(x => x.wx === wx && x.wy === wy);
+            if (mk) { mk.el.classList.add('flash'); setTimeout(() => mk.el.classList.remove('flash'), 3200); }
+          }, 560);
+        });
+      });
+    }
+
+    /* ===== 初始化 ===== */
+    window.addEventListener('resize', () => { clampT(); apply(); });
+    document.addEventListener('DOMContentLoaded', () => {
+      refreshMarkers();
+      fitContent();
+    });
+    if (document.readyState !== 'loading') { refreshMarkers(); fitContent(); }
+  </script>
+</body>
+</html>
