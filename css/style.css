@@ -935,6 +935,25 @@ body {
   color: var(--text-primary);
 }
 
+.mv-back-btn {
+  margin-top: 12px;
+  width: 100%;
+  padding: 8px 0;
+  border-radius: 8px;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-glow);
+  color: var(--accent-gold-light);
+  font-size: 13px;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.mv-back-btn:hover {
+  border-color: var(--accent-gold);
+  background: rgba(212, 175, 55, 0.12);
+}
+
 .mv-loc-list {
   overflow-y: auto;
   max-height: 420px;
