@@ -46,9 +46,35 @@ async function getJson(url) {
 (async () => {
   console.log('1/4 拉取地图切片配置...');
   const info = (await getJson(`${API_V3}/info?map_id=2&app_sn=ys_obc&lang=zh-cn`)).info;
-  const detail = JSON.parse(info.detail);
-  const slices = detail.slices.map(row => row.map(c => c.url));
-  const totalSize = detail.total_size;
+
+  // 优先使用 detail_v2：7.0 版本后的新画布（含至冬），webp 金字塔瓦片
+  // 回退 detail：旧版单尺度 png 切片（22528×20480）
+  let tiles, totalSize, origin;
+  if (info.detail_v2 && info.detail_v2.map_version) {
+    const v2 = info.detail_v2;
+    totalSize = v2.total_size;
+    origin = v2.origin;
+    // N3 每片覆盖 2048 世界像素，N2=1024，N1=512；N0 官方暂未发布
+    const levels = [];
+    for (let z = 3; z >= 1; z--) {
+      const world = 256 * (1 << z);
+      levels.push({ z, cols: Math.ceil(totalSize[0] / world), rows: Math.ceil(totalSize[1] / world), world });
+    }
+    tiles = {
+      type: 'pyramid',
+      tileSize: 256,
+      version: v2.map_version,
+      url: `https://act-webstatic.mihoyo.com/ys-map-op/map/2/${v2.map_version}/{c}_{r}_N{z}.webp`,
+      levels
+    };
+    console.log(`   detail_v2 新画布 ${totalSize[0]}×${totalSize[1]}，版本 ${v2.map_version}，${levels.length} 级瓦片`);
+  } else {
+    const detail = JSON.parse(info.detail);
+    totalSize = detail.total_size;
+    origin = detail.origin || [totalSize[0] / 2, totalSize[1] / 2];
+    tiles = { type: 'sheet', tileSize: 2048, slices: detail.slices.map(row => row.map(c => c.url)) };
+    console.log(`   detail 旧画布 ${totalSize[0]}×${totalSize[1]}`);
+  }
 
   console.log('2/4 拉取国家区域...');
   const areaData = await getJson(`${API}/get_area_pageLabel?map_id=2&app_sn=ys_obc&lang=zh-cn`);
@@ -81,9 +107,9 @@ async function getJson(url) {
     for (const p of points) {
       if (!cat.labelIds.includes(p.label_id)) continue;
       if (p.z_level !== 0 || p.display_state !== 1) continue;
-      // 剔除画布外的限时活动岛屿点位
-      const tx = p.x_pos + totalSize[0] / 2;
-      const ty = p.y_pos + totalSize[1] / 2;
+      // 剔除画布外的限时活动岛屿点位（游戏坐标 + origin = 画布像素）
+      const tx = p.x_pos + origin[0];
+      const ty = p.y_pos + origin[1];
       if (tx < 0 || ty < 0 || tx > totalSize[0] || ty > totalSize[1]) continue;
       arr.push([Math.round(p.x_pos * 10) / 10, Math.round(p.y_pos * 10) / 10, p.area_id, p.label_id]);
     }
@@ -110,9 +136,9 @@ async function getJson(url) {
   const out = {
     source: '米游社「观测枢」原神官方互动地图公开数据 (api-takumi.mihoyo.com)',
     builtAt: new Date().toISOString().slice(0, 10),
-    tileSize: 2048,
     totalSize,
-    slices,
+    origin,
+    tiles,
     countries,
     categories: CATEGORIES.map(c => ({ key: c.key, name: c.name, color: c.color, icon: catIcons[c.key] || '' })),
     labels,

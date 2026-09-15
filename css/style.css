@@ -1028,15 +1028,11 @@ body {
   position: absolute;
   left: 0;
   top: 0;
-  width: 22528px;
-  height: 20480px;
   transform-origin: 0 0;
 }
 
 .mv-tile {
   position: absolute;
-  width: 2048px;
-  height: 2048px;
   pointer-events: none;
   image-rendering: auto;
 }
