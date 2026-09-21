@@ -50,10 +50,15 @@
           </div>
         </aside>
 
-        <!-- 地图视口（纯切片，无标记） -->
+        <!-- 分类筛选条 -->
+        <div class="mv-toolbar" id="catToolbar"></div>
+
+        <!-- 地图视口 -->
         <div class="mv-viewport" id="viewport">
           <div class="mv-world" id="world">
             <div id="tileLayer" style="position:absolute;inset:0;"></div>
+            <div id="labelLayer" style="position:absolute;inset:0;pointer-events:none;"></div>
+            <div id="markerLayer" style="position:absolute;inset:0;"></div>
           </div>
 
           <div class="mv-loading" id="loadingPill">官方切片加载中 …</div>
@@ -155,10 +160,13 @@
       }
     }
 
-    /* ===== 变换：地图整体（含切片）统一缩放 ===== */
+    /* ===== 变换：地图整体（含切片+标记）统一缩放 ===== */
     function apply() {
       worldEl.style.transform = `translate(${tx}px,${ty}px) scale(${scale})`;
+      worldEl.style.setProperty('--invs', 1 / scale);
       updateTiles();
+      updateMarkers();
+      updateLabels();
       updateStatus();
     }
 
@@ -205,6 +213,7 @@
         tx = t0x + (t1x - t0x) * e;
         ty = t0y + (t1y - t0y) * e;
         apply();
+        updatePopupPos();
         if (p < 1) animId = requestAnimationFrame(step);
       };
       animId = requestAnimationFrame(step);
@@ -285,8 +294,10 @@
 
     /* ===== 状态栏 ===== */
     function updateStatus() {
+      const showMk = scale >= 0.06;
       document.getElementById('statusBar').textContent =
-        `官方地图 · 缩放 ${Math.round(scale * 100)}% · 拖动平移 / 滚轮缩放`;
+        `官方地图 · 缩放 ${Math.round(scale * 100)}% · 拖动平移 / 滚轮缩放` +
+        (showMk ? '' : ' · 放大后显示标记');
     }
 
     /* ===== 侧栏国家 ===== */
@@ -322,6 +333,101 @@
       if (fly) flyToBbox(c.bbox);
     }
     document.getElementById('backAllBtn').addEventListener('click', () => { selectCountry(null); fitContent(); });
+
+    /* ===== 标记层 ===== */
+    const markerLayer = document.getElementById('markerLayer');
+    const labelLayer = document.getElementById('labelLayer');
+    const catOn = {};
+    let popup = null, popupWx = 0, popupWy = 0;
+
+    // 创建所有标记元素（一次性，后续只切换 display）
+    const allMarkers = [];
+    M.categories.forEach(cat => {
+      catOn[cat.key] = true;
+      (M.markers[cat.key] || []).forEach(m => {
+        const wx = m[0] + OX, wy = m[1] + OY;
+        const el = document.createElement('div');
+        el.className = 'mv-marker';
+        el.style.left = wx + 'px';
+        el.style.top = wy + 'px';
+        const country = M.countries.find(c => c.id === m[2]);
+        const name = (M.labels && M.labels[m[3]]) || cat.name;
+        el.innerHTML = `<img src="${cat.icon}" alt="" draggable="false"><span class="mv-mk-label">${name}</span>`;
+        el.addEventListener('click', e => {
+          e.stopPropagation();
+          showPopup(wx, wy, name, cat.name, country ? country.name : '');
+        });
+        markerLayer.appendChild(el);
+        allMarkers.push({ el, key: cat.key, wx, wy, name, catName: cat.name, country: country ? country.name : '' });
+      });
+    });
+
+    // 视口裁剪 + 缩放门控：只显示视口内且已放大的标记
+    function updateMarkers() {
+      if (scale < 0.06) { markerLayer.style.display = 'none'; return; }
+      markerLayer.style.display = '';
+      const vw = viewport.clientWidth, vh = viewport.clientHeight;
+      const wx0 = -tx / scale - 60, wy0 = -ty / scale - 60;
+      const wx1 = (vw - tx) / scale + 60, wy1 = (vh - ty) / scale + 60;
+      for (const mk of allMarkers) {
+        const inView = mk.wx >= wx0 && mk.wx <= wx1 && mk.wy >= wy0 && mk.wy <= wy1;
+        mk.el.style.display = (inView && catOn[mk.key]) ? '' : 'none';
+      }
+    }
+
+    /* ===== 国家名标签 ===== */
+    M.countries.forEach(c => {
+      const wx = (c.bbox[0] + c.bbox[2]) / 2 + OX;
+      const wy = (c.bbox[1] + c.bbox[3]) / 2 + OY;
+      const el = document.createElement('div');
+      el.className = 'mv-region-label';
+      el.style.left = wx + 'px';
+      el.style.top = wy + 'px';
+      const motto = (c.desc.match(/「(.+?)」/) || [])[1];
+      el.innerHTML = `<div class="mv-rl-name">${c.name}</div>` +
+        (motto ? `<div class="mv-rl-sub">${motto}之城</div>` : '');
+      el.addEventListener('click', e => { e.stopPropagation(); selectCountry(c.id, true); });
+      labelLayer.appendChild(el);
+    });
+
+    function updateLabels() {
+      // 缩小时显示国家名，放大后隐藏（放大后看的是细节，国家名不需要）
+      labelLayer.style.display = scale < 0.25 ? '' : 'none';
+    }
+
+    /* ===== 弹出框 ===== */
+    function showPopup(wx, wy, name, catName, countryName) {
+      hidePopup();
+      popup = document.createElement('div');
+      popup.className = 'mv-popup';
+      popup.innerHTML = `<div class="mv-pop-name">${name}</div><div class="mv-pop-sub">${catName}${countryName ? ' · ' + countryName : ''}</div>`;
+      viewport.appendChild(popup);
+      popupWx = wx; popupWy = wy;
+      updatePopupPos();
+    }
+    function updatePopupPos() {
+      if (!popup) return;
+      popup.style.left = popupWx * scale + tx + 'px';
+      popup.style.top = popupWy * scale + ty + 'px';
+    }
+    function hidePopup() { if (popup) { popup.remove(); popup = null; } }
+    viewport.addEventListener('pointerdown', e => { if (!e.target.closest('.mv-marker') && !e.target.closest('.mv-popup')) hidePopup(); });
+
+    /* ===== 分类筛选条 ===== */
+    const toolbar = document.getElementById('catToolbar');
+    toolbar.innerHTML = M.categories.map(cat => {
+      const n = (M.markers[cat.key] || []).length;
+      return `<span class="mv-cat active" data-key="${cat.key}" style="--c:${cat.color}">
+        <img src="${cat.icon}" alt=""><span>${cat.name}</span><span class="mv-count">${n}</span></span>`;
+    }).join('');
+    toolbar.addEventListener('click', e => {
+      const chip = e.target.closest('.mv-cat');
+      if (!chip) return;
+      const key = chip.dataset.key;
+      catOn[key] = !catOn[key];
+      chip.classList.toggle('active', catOn[key]);
+      updateMarkers();
+    });
 
     /* ===== 初始化 ===== */
     window.addEventListener('resize', () => { clampT(); apply(); });

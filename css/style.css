@@ -800,7 +800,8 @@ body {
 }
 
 /* 工具栏：分类筛选 */
-.map-toolbar {
+.map-toolbar,
+.mv-toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
