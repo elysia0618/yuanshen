@@ -431,8 +431,16 @@
 
     /* ===== 初始化 ===== */
     window.addEventListener('resize', () => { clampT(); apply(); });
-    if (document.readyState !== 'loading') fitContent();
-    else document.addEventListener('DOMContentLoaded', fitContent);
+    function init() {
+      fitContent();
+      // 自动滚动到地图区域
+      setTimeout(() => {
+        const sec = document.querySelector('.map-section');
+        if (sec) window.scrollTo({ top: sec.offsetTop - 70, behavior: 'smooth' });
+      }, 400);
+    }
+    if (document.readyState !== 'loading') init();
+    else document.addEventListener('DOMContentLoaded', init);
   </script>
 </body>
 </html>
