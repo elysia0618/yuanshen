@@ -794,7 +794,7 @@ body {
 }
 
 .map-section {
-  max-width: 1280px;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 0 24px 60px;
 }
@@ -849,7 +849,7 @@ body {
 /* 主体布局 */
 .mv-layout {
   display: grid;
-  grid-template-columns: 300px 1fr;
+  grid-template-columns: 260px 1fr;
   gap: 16px;
   align-items: stretch;
 }
@@ -1015,7 +1015,8 @@ body {
   border-radius: 12px;
   border: 1px solid var(--border-glow);
   background: #060a14;
-  min-height: 560px;
+  height: calc(100vh - 280px);
+  min-height: 520px;
   cursor: grab;
   box-shadow: var(--shadow-glow);
   touch-action: none;
